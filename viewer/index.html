@@ -1,0 +1,1351 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Possession replay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@400;500;600;700&display=swap">
+<style>
+:root {
+  color-scheme: light;
+  --page: #edf1ea;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --hairline: rgba(11, 11, 11, 0.10);
+  --home: #2a78d6;
+  --away: #eb6834;
+  --dead: #898781;
+  --critical: #d03b3b;
+  --turf-a: #e1ebdc;
+  --turf-b: #d7e4d1;
+  --turf-line: rgba(28, 60, 36, 0.55);
+  --ball: #ffffff;
+  --ball-ring: #0b0b0b;
+  --halo: #0b0b0b;
+  --focus: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --page: #0e1310;
+    --surface: #1a1a19;
+    --ink: #f0efec;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --hairline: rgba(255, 255, 255, 0.10);
+    --home: #3987e5;
+    --away: #d95926;
+    --dead: #898781;
+    --critical: #d03b3b;
+    --turf-a: #142019;
+    --turf-b: #18261d;
+    --turf-line: rgba(214, 234, 220, 0.30);
+    --ball: #ffffff;
+    --ball-ring: #0b0b0b;
+    --halo: #f0efec;
+    --focus: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0e1310;
+  --surface: #1a1a19;
+  --ink: #f0efec;
+  --ink-2: #c3c2b7;
+  --muted: #898781;
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --hairline: rgba(255, 255, 255, 0.10);
+  --home: #3987e5;
+  --away: #d95926;
+  --dead: #898781;
+  --critical: #d03b3b;
+  --turf-a: #142019;
+  --turf-b: #18261d;
+  --turf-line: rgba(214, 234, 220, 0.30);
+  --ball: #ffffff;
+  --ball-ring: #0b0b0b;
+  --halo: #f0efec;
+  --focus: #3987e5;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--page);
+  color: var(--ink);
+  font-family: "Barlow Semi Condensed", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+}
+.app { max-width: 1480px; margin: 0 auto; padding: 16px; }
+
+/* Scorebug: the fixture, the clock, and the two calls being compared. */
+.bug {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 10px 18px;
+}
+.fixture h1 {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 600;
+  line-height: 1.15;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.team { display: inline-flex; align-items: center; gap: 7px; }
+.swatch { width: 11px; height: 11px; border-radius: 50%; display: inline-block; flex: none; }
+.versus { color: var(--ink-2); font-weight: 400; }
+.fixture p { margin: 3px 0 0; color: var(--ink-2); font-size: 14px; }
+.clock { text-align: center; }
+#clock {
+  display: block;
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+#half { color: var(--ink-2); font-size: 14px; }
+.calls { display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 6px 22px; }
+.call { display: flex; flex-direction: column; gap: 1px; min-width: 8.5em; }
+.call-name { color: var(--ink-2); font-size: 13px; }
+.chip { display: inline-flex; align-items: center; gap: 7px; font-size: 18px; font-weight: 600; }
+.chip i { width: 13px; height: 13px; border-radius: 3px; display: inline-block; flex: none; }
+.verdict { margin: 0; min-width: 9em; font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.verdict.differs { color: var(--critical); }
+.verdict.matches, .verdict.quiet { color: var(--ink-2); font-weight: 500; }
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 16px;
+  margin-top: 14px;
+  align-items: start;
+}
+.pitch-wrap { position: relative; display: flex; justify-content: center; }
+#pitch { display: block; border-radius: 6px; }
+.ball-state {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  margin: 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+.timeline {
+  margin-top: 12px;
+  padding: 8px 12px 6px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.timeline canvas { display: block; width: 100%; }
+#zoom { cursor: crosshair; }
+#overview { cursor: pointer; margin-top: 4px; touch-action: none; }
+
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+button {
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--axis);
+  border-radius: 7px;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+button:hover { background: var(--grid); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+button:disabled { opacity: 0.45; cursor: default; background: var(--surface); }
+button.primary { min-width: 5.6em; font-weight: 600; color: var(--surface); background: var(--ink); border-color: var(--ink); }
+button.primary:hover { background: var(--ink-2); border-color: var(--ink-2); }
+.seg { display: inline-flex; border: 1px solid var(--axis); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 5px 9px; font-variant-numeric: tabular-nums; }
+.seg button + button { border-left: 1px solid var(--axis); }
+.seg button[aria-pressed="true"] { color: var(--surface); background: var(--ink); }
+
+.side section + section { margin-top: 22px; }
+.side h2 { margin: 0 0 4px; font-size: 18px; font-weight: 600; }
+.note { margin: 0 0 8px; color: var(--ink-2); font-size: 14px; }
+#miss-list {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 44vh;
+  overflow: auto;
+  border-top: 1px solid var(--hairline);
+}
+#miss-list li { border-bottom: 1px solid var(--hairline); }
+#miss-list button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 10px;
+  text-align: left;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+#miss-list button:hover { background: var(--grid); }
+#miss-list button[aria-current="true"] { background: var(--grid); box-shadow: inset 3px 0 0 var(--critical); }
+.mm-time { font-weight: 600; font-variant-numeric: tabular-nums; }
+.mm-length { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.mm-what { grid-column: 1 / -1; color: var(--ink-2); font-size: 14px; }
+.options label { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 15px; }
+.options button { margin-top: 8px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; font-size: 14px; }
+.keys dt { white-space: nowrap; }
+.keys dd { margin: 0; color: var(--ink-2); }
+kbd {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 0 5px;
+  border: 1px solid var(--axis);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+#tip {
+  position: fixed;
+  z-index: 10;
+  min-width: 13em;
+  padding: 8px 10px;
+  pointer-events: none;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+#tip .t-head { font-weight: 600; margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+#tip .t-row { display: flex; justify-content: space-between; gap: 14px; }
+#tip .t-row span:first-child { color: var(--ink-2); }
+#tip .t-row span:last-child { font-variant-numeric: tabular-nums; }
+#error {
+  max-width: 640px;
+  margin: 14vh auto;
+  padding: 18px 22px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+#error h1 { margin: 0 0 6px; font-size: 22px; font-weight: 600; }
+#error p { margin: 0; color: var(--ink-2); }
+
+@media (max-width: 1100px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  #miss-list { max-height: 34vh; }
+}
+@media (max-width: 680px) {
+  .bug { grid-template-columns: 1fr; gap: 8px; }
+  .clock { text-align: left; }
+  .calls { justify-content: flex-start; }
+  #clock { font-size: 32px; }
+}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="bug">
+    <div class="fixture">
+      <h1>
+        <span class="team"><i class="swatch" data-team="0"></i><span id="home-name">Home</span></span>
+        <span class="versus">v</span>
+        <span class="team"><i class="swatch" data-team="1"></i><span id="away-name">Away</span></span>
+      </h1>
+      <p id="subtitle">Loading the replay</p>
+    </div>
+    <div class="clock">
+      <span id="clock">0:00</span>
+      <span id="half"></span>
+    </div>
+    <div class="calls">
+      <div class="call" id="pred-call"><span class="call-name">Our call</span><span class="chip" id="call-pred"><i></i><b></b></span></div>
+      <div class="call" id="truth-call"><span class="call-name">Truth</span><span class="chip" id="call-truth"><i></i><b></b></span></div>
+      <p class="verdict" id="verdict" aria-live="polite"></p>
+    </div>
+  </header>
+
+  <div class="stage">
+    <div class="main">
+      <div class="pitch-wrap" id="pitch-wrap">
+        <canvas id="pitch" role="img" aria-label="The pitch: each player is a dot in their team's colour, the ball is the small white dot"></canvas>
+        <p class="ball-state" id="ball-state" hidden></p>
+      </div>
+      <div class="timeline">
+        <canvas id="zoom" role="img" aria-label="The time around now: our call, the truth and what the models said. Click to move there, scroll to zoom"></canvas>
+        <canvas id="overview" role="img" aria-label="The whole match: our call, the truth and where they differ. Click or drag to move"></canvas>
+      </div>
+      <div class="controls" role="toolbar" aria-label="Playback">
+        <button type="button" id="play" class="primary">Play</button>
+        <div class="seg" role="group" aria-label="Speed" id="speeds"></div>
+        <button type="button" data-step="-125">Back 5 s</button>
+        <button type="button" data-step="125">Forward 5 s</button>
+        <button type="button" id="prev-change">Previous change</button>
+        <button type="button" id="next-change">Next change</button>
+        <button type="button" id="prev-miss">Previous difference</button>
+        <button type="button" id="next-miss">Next difference</button>
+      </div>
+    </div>
+
+    <aside class="side">
+      <section>
+        <h2>Where our call differs</h2>
+        <p class="note" id="miss-summary"></p>
+        <ol id="miss-list"></ol>
+      </section>
+      <section class="options">
+        <h2>Show</h2>
+        <label><input type="checkbox" id="opt-trail" checked> The ball's path over the last second</label>
+        <label><input type="checkbox" id="opt-nearest" checked> A ring round the player nearest the ball</label>
+        <button type="button" id="theme">Use dark theme</button>
+      </section>
+      <section>
+        <h2>Keys</h2>
+        <dl class="keys">
+          <dt><kbd>Space</kbd></dt><dd>Play or pause</dd>
+          <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>One frame back or forward</dd>
+          <dt><kbd>Shift</kbd> + <kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Five seconds back or forward</dd>
+          <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous or next change of our call</dd>
+          <dt><kbd>,</kbd> <kbd>.</kbd></dt><dd>Previous or next difference from the truth</dd>
+          <dt><kbd>-</kbd> <kbd>=</kbd></dt><dd>Slower or faster</dd>
+          <dt>Scroll</dt><dd>Over the upper strip, to zoom it in or out</dd>
+        </dl>
+      </section>
+    </aside>
+  </div>
+</div>
+<div id="error" hidden><h1>The replay could not start</h1><p></p></div>
+<div id="tip" role="tooltip" hidden></div>
+
+<script>
+"use strict";
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const H = 0, A = 1, D = 2, NONE = 3, NO_VALUE = 255;
+  const MIN_SPAN = 10;   // frames; shorter differences are boundary jitter, not missed possessions
+  const SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+  const PERIODS = ["1st half", "2nd half", "Extra time, 1st half", "Extra time, 2nd half"];
+  const PERIOD_START_MIN = [0, 45, 90, 105];
+  const FONT = '"Barlow Semi Condensed", system-ui, -apple-system, "Segoe UI", sans-serif';
+  const COLOUR_KEYS = ["surface", "ink", "ink-2", "muted", "grid", "axis", "home", "away", "dead",
+                       "critical", "turf-a", "turf-b", "turf-line", "ball", "ball-ring", "halo"];
+
+  let meta, fps, N, cols, scale, MISSING, nSlots, slotTeam, halves, kicks, teams;
+  let pos, pred, truth, pHome, pDead;
+  let hasPred = false, hasTruth = false, hasHome = false, hasDead = false;
+  let changeTargets = [], misses = [], missTargets = [], missCum = null;
+  let truthFrames = 0, wrongFrames = 0;
+  const col = {};
+  const view = { f: 0, ff: 0, playing: false, speed: 1, trail: true, nearest: true,
+                 win: 45 * 25, hover: null, dirty: true };
+
+  // -- loading ---------------------------------------------------------------------------------
+
+  function fail(message) {
+    $("app").hidden = true;
+    const box = $("error");
+    box.hidden = false;
+    box.querySelector("p").textContent = message;
+  }
+
+  async function buffer(name) {
+    const response = await fetch(name);
+    if (!response.ok) throw new Error(name + " answered " + response.status);
+    return response.arrayBuffer();
+  }
+
+  async function load() {
+    if (location.protocol === "file:") {
+      fail("A page opened straight from a file cannot read its data. Start it with " +
+           "python replay.py --serve, which serves the replays on this computer, and open " +
+           "the address it prints.");
+      return;
+    }
+    let positionBytes, seriesBytes;
+    try {
+      const response = await fetch("meta.json");
+      if (!response.ok) throw new Error("meta.json answered " + response.status);
+      meta = await response.json();
+      [positionBytes, seriesBytes] = await Promise.all(
+        [buffer(meta.positions.file), buffer(meta.series.file)]);
+    } catch (error) {
+      fail("The replay data could not be loaded (" + error.message + "). Rebuild it with replay.py.");
+      return;
+    }
+    fps = meta.fps; N = meta.n_frames; cols = meta.positions.columns;
+    scale = meta.positions.scale; MISSING = meta.positions.missing;
+    nSlots = (cols - 2) / 2; slotTeam = meta.slot_team;
+    halves = meta.halves; kicks = meta.kickoffs; teams = meta.teams;
+    pos = new Int16Array(positionBytes);
+    const bytes = new Uint8Array(seriesBytes);
+    const names = meta.series.names;
+    if (pos.length !== N * cols || bytes.length !== N * names.length) {
+      fail("The data files do not match meta.json. Rebuild the replay with replay.py.");
+      return;
+    }
+    const pick = (name) => {
+      const i = names.indexOf(name);
+      return i < 0 ? null : bytes.subarray(i * N, (i + 1) * N);
+    };
+    pred = pick("pred"); truth = pick("truth");
+    pHome = pick("p_home"); pDead = pick("p_dead");
+    setup();
+  }
+
+  // -- time ------------------------------------------------------------------------------------
+
+  function halfOf(f) {
+    for (let i = 0; i < halves.length; i++) if (f >= halves[i][0] && f <= halves[i][1]) return i;
+    return -1;
+  }
+
+  // The nearest frame that is inside a half: the replay never shows half-time.
+  function snap(f) {
+    f = Math.round(f);
+    for (const [a, b] of halves) if (f <= b) return Math.max(f, a);
+    return halves[halves.length - 1][1];
+  }
+
+  function mmss(seconds) {
+    const m = Math.floor(seconds / 60), s = Math.floor(seconds - 60 * m);
+    return m + ":" + String(s).padStart(2, "0");
+  }
+
+  function clockAt(f) {
+    const h = Math.max(0, halfOf(f));
+    const kick = kicks[h] != null ? kicks[h] : halves[h][0];
+    const base = (PERIOD_START_MIN[h] || 0) * 60;
+    const name = PERIODS[h] || "Period " + (h + 1);
+    if (f < kick) return { text: mmss(base), half: name + ", before kick-off" };
+    return { text: mmss(base + (f - kick) / fps), half: name };
+  }
+
+  // -- labels ----------------------------------------------------------------------------------
+
+  function nameOf(code) {
+    return code === H ? teams[0] : code === A ? teams[1] : code === D ? "Dead ball" : "No answer";
+  }
+  function phrase(code) { return code === D ? "a dead ball" : nameOf(code); }
+  function colourOf(code) {
+    return code === H ? col.home : code === A ? col.away : code === D ? col.dead : null;
+  }
+  function percent(value) { return Math.round(value / 2.5) + "%"; }
+
+  function anyLabel(codes) {
+    if (!codes) return false;
+    for (const [a, b] of halves) for (let f = a; f <= b; f++) if (codes[f] !== NONE) return true;
+    return false;
+  }
+  function anyValue(values) {
+    if (!values) return false;
+    for (let f = 0; f < N; f++) if (values[f] !== NO_VALUE) return true;
+    return false;
+  }
+
+  function computeChanges() {
+    changeTargets = [];
+    if (!hasPred) return;
+    for (const [a, b] of halves) {
+      for (let f = a + 1; f <= b; f++) if (pred[f] !== pred[f - 1]) changeTargets.push(f - 12);
+    }
+  }
+
+  function computeMisses() {
+    misses = []; missTargets = [];
+    missCum = new Int32Array(N + 1);
+    truthFrames = 0; wrongFrames = 0;
+    if (!hasTruth || !hasPred) return;
+    const wrong = new Uint8Array(N);
+    for (const [a, b] of halves) {
+      for (let f = a; f <= b; f++) {
+        if (truth[f] === NONE) continue;
+        truthFrames++;
+        if (pred[f] !== truth[f]) { wrong[f] = 1; wrongFrames++; }
+      }
+    }
+    for (let f = 0; f < N; f++) missCum[f + 1] = missCum[f] + wrong[f];
+    for (const [a, b] of halves) {
+      let start = a, key = -1;
+      for (let f = a; f <= b + 1; f++) {
+        const k = f <= b && wrong[f] ? pred[f] * 4 + truth[f] : -1;
+        if (k === key) continue;
+        if (key >= 0 && f - start >= MIN_SPAN) {
+          misses.push({ start, end: f, pred: key >> 2, truth: key & 3, button: null });
+        }
+        start = f; key = k;
+      }
+    }
+    missTargets = misses.map((m) => m.start - fps);
+  }
+
+  // -- set-up ----------------------------------------------------------------------------------
+
+  function setup() {
+    document.title = meta.title + ", possession replay";
+    $("home-name").textContent = teams[0];
+    $("away-name").textContent = teams[1];
+    $("subtitle").textContent = meta.subtitle || "";
+    hasPred = anyLabel(pred);
+    hasTruth = anyLabel(truth);
+    hasHome = anyValue(pHome);
+    hasDead = anyValue(pDead);
+    $("pred-call").hidden = !hasPred;
+    $("truth-call").hidden = !hasTruth;
+    computeChanges();
+    computeMisses();
+    buildMissList();
+    buildSpeeds();
+    $("prev-change").disabled = $("next-change").disabled = !hasPred;
+    $("prev-miss").disabled = $("next-miss").disabled = misses.length === 0;
+    // The address can carry a moment and a view: #frame=12345&window=30&theme=dark&play=1
+    const options = new URLSearchParams(location.hash.slice(1));
+    if (options.get("theme") === "dark" || options.get("theme") === "light") {
+      document.documentElement.dataset.theme = options.get("theme");
+      updateThemeButton();
+    } else {
+      applyStoredTheme();
+    }
+    const windowSeconds = Number(options.get("window"));
+    if (windowSeconds >= 5 && windowSeconds <= 600) view.win = windowSeconds * fps;
+    readColours();
+    bind();
+    layout();
+    const start = Number(options.get("frame"));
+    seek(options.has("frame") && Number.isFinite(start) ? start : kicks[0] != null ? kicks[0] : halves[0][0]);
+    if (options.get("play") === "1") play();
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => { buildStatics(); view.dirty = true; });
+    }
+    requestAnimationFrame(loop);
+  }
+
+  function buildMissList() {
+    const list = $("miss-list"), summary = $("miss-summary");
+    list.textContent = "";
+    if (!hasTruth || !hasPred) {
+      summary.textContent = !hasTruth
+        ? "This match has no truth to compare our call with."
+        : "There is no call of ours to compare with the truth.";
+      list.hidden = true;
+      return;
+    }
+    const share = 100 * (1 - wrongFrames / truthFrames);
+    const seconds = truthFrames / fps;
+    const covered = seconds >= 120 ? (seconds / 60).toFixed(1) + " minutes" : Math.round(seconds) + " s";
+    const count = misses.length;
+    summary.textContent = "Our call matches the truth on " + share.toFixed(1) + "% of the " + covered +
+      " the truth covers. " + (count === 0 ? "No stretch of 0.4 s or longer differs."
+        : count + (count === 1 ? " stretch" : " stretches") + " of 0.4 s or longer differ:");
+    for (const m of misses) {
+      const li = document.createElement("li");
+      const button = document.createElement("button");
+      button.type = "button";
+      const time = document.createElement("span");
+      time.className = "mm-time";
+      time.textContent = clockAt(m.start).text + "–" + clockAt(m.end - 1).text;
+      const length = document.createElement("span");
+      length.className = "mm-length";
+      length.textContent = ((m.end - m.start) / fps).toFixed(1) + " s";
+      const what = document.createElement("span");
+      what.className = "mm-what";
+      what.textContent = "We said " + phrase(m.pred) + "; the truth is " + phrase(m.truth) + ".";
+      button.append(time, length, what);
+      button.addEventListener("click", () => { pause(); seek(m.start - fps); });
+      m.button = button;
+      li.append(button);
+      list.append(li);
+    }
+  }
+
+  function buildSpeeds() {
+    const box = $("speeds");
+    for (const s of SPEEDS) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = (s === 0.25 ? "¼" : s === 0.5 ? "½" : String(s)) + "×";
+      button.setAttribute("aria-label", s + " times speed");
+      button.addEventListener("click", () => setSpeed(s));
+      box.append(button);
+    }
+    setSpeed(1);
+  }
+
+  function setSpeed(s) {
+    view.speed = s;
+    Array.from($("speeds").children).forEach((button, i) => {
+      button.setAttribute("aria-pressed", String(SPEEDS[i] === s));
+    });
+  }
+
+  function nudgeSpeed(direction) {
+    const i = SPEEDS.indexOf(view.speed) + direction;
+    if (i >= 0 && i < SPEEDS.length) setSpeed(SPEEDS[i]);
+  }
+
+  // -- theme -----------------------------------------------------------------------------------
+
+  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  function effectiveTheme() {
+    return document.documentElement.dataset.theme || (darkQuery.matches ? "dark" : "light");
+  }
+  function applyStoredTheme() {
+    try {
+      const stored = localStorage.getItem("possession-replay-theme");
+      if (stored === "dark" || stored === "light") document.documentElement.dataset.theme = stored;
+    } catch (error) { /* storage unavailable: follow the system */ }
+    updateThemeButton();
+  }
+  function updateThemeButton() {
+    $("theme").textContent = effectiveTheme() === "dark" ? "Use light theme" : "Use dark theme";
+  }
+  function themeChanged() {
+    updateThemeButton();
+    readColours();
+    buildStatics();
+    view.dirty = true;
+  }
+  function toggleTheme() {
+    const next = effectiveTheme() === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("possession-replay-theme", next); } catch (error) { /* ignore */ }
+    themeChanged();
+  }
+
+  function readColours() {
+    const style = getComputedStyle(document.documentElement);
+    for (const key of COLOUR_KEYS) col[key] = style.getPropertyValue("--" + key).trim();
+    document.querySelectorAll(".swatch").forEach((swatch) => {
+      swatch.style.background = swatch.dataset.team === "0" ? col.home : col.away;
+    });
+  }
+
+  // -- layout ----------------------------------------------------------------------------------
+
+  const T = { s: 1, m: 3.5, dpr: 1, w: 0, h: 0, base: null };
+  const Z = { dpr: 1, w: 0, h: 0, labelW: 0, plotW: 0, rows: [], axisY: 0, hatch: null };
+  const O = { dpr: 1, w: 0, h: 0, labelW: 0, parts: [], rows: [], labelY: 0, base: null };
+
+  let layoutPending = false;
+  function scheduleLayout() {
+    if (layoutPending) return;
+    layoutPending = true;
+    requestAnimationFrame(() => { layoutPending = false; layout(); });
+  }
+
+  function layout() {
+    layoutPitch();
+    layoutZoom();
+    layoutOverview();
+    buildStatics();
+    view.dirty = true;
+  }
+
+  function buildStatics() {
+    if (!meta) return;
+    buildPitchBase();
+    Z.hatch = makeHatch($("zoom").getContext("2d"));
+    buildOverviewBase();
+  }
+
+  function makeHatch(context) {
+    const tile = document.createElement("canvas");
+    tile.width = tile.height = 6;
+    const c = tile.getContext("2d");
+    c.strokeStyle = col.axis;
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(-1, 7); c.lineTo(7, -1);
+    c.stroke();
+    return context.createPattern(tile, "repeat");
+  }
+
+  function fitText(c, text, max) {
+    if (c.measureText(text).width <= max) return text;
+    let cut = text;
+    while (cut.length > 1 && c.measureText(cut + "…").width > max) cut = cut.slice(0, -1);
+    return cut + "…";
+  }
+
+  // -- the pitch -------------------------------------------------------------------------------
+
+  const P = (metres) => (metres + T.m) * T.s;   // pitch metres to device pixels, either axis
+
+  function layoutPitch() {
+    const canvas = $("pitch"), wrap = $("pitch-wrap");
+    const L = meta.pitch[0], W = meta.pitch[1], m = T.m;
+    const aspect = (L + 2 * m) / (W + 2 * m);
+    let w = wrap.clientWidth, h = w / aspect;
+    const maxH = Math.max(260, window.innerHeight - 380);
+    if (h > maxH) { h = maxH; w = h * aspect; }
+    T.dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * T.dpr);
+    canvas.height = Math.round(h * T.dpr);
+    canvas.style.width = w + "px";
+    canvas.style.height = h + "px";
+    T.w = canvas.width; T.h = canvas.height;
+    T.s = canvas.width / (L + 2 * m);
+  }
+
+  function buildPitchBase() {
+    const base = document.createElement("canvas");
+    base.width = T.w; base.height = T.h;
+    const c = base.getContext("2d");
+    const L = meta.pitch[0], W = meta.pitch[1];
+    c.fillStyle = col["turf-a"];
+    c.fillRect(0, 0, T.w, T.h);
+    // Mowing stripes: twelve bands across the length of the pitch.
+    const bands = 12;
+    c.fillStyle = col["turf-b"];
+    for (let i = 1; i < bands; i += 2) c.fillRect(P(i * L / bands), P(0), L / bands * T.s, W * T.s);
+
+    c.strokeStyle = col["turf-line"];
+    c.fillStyle = col["turf-line"];
+    c.lineWidth = Math.max(1.25 * T.dpr, 0.12 * T.s);
+    const line = (x0, y0, x1, y1) => { c.beginPath(); c.moveTo(P(x0), P(y0)); c.lineTo(P(x1), P(y1)); c.stroke(); };
+    const box = (x, y, w, h) => c.strokeRect(P(x), P(y), w * T.s, h * T.s);
+    const spot = (x, y) => { c.beginPath(); c.arc(P(x), P(y), Math.max(1.5 * T.dpr, 0.22 * T.s), 0, 2 * Math.PI); c.fill(); };
+    const arc = (x, y, r, from, to) => { c.beginPath(); c.arc(P(x), P(y), r * T.s, from, to); c.stroke(); };
+
+    box(0, 0, L, W);
+    line(L / 2, 0, L / 2, W);
+    arc(L / 2, W / 2, 9.15, 0, 2 * Math.PI);
+    spot(L / 2, W / 2);
+    const reach = Math.acos(5.5 / 9.15);   // where the penalty arc leaves the area
+    for (const [x0, d] of [[0, 1], [L, -1]]) {
+      box(d > 0 ? x0 : x0 - 16.5, (W - 40.32) / 2, 16.5, 40.32);
+      box(d > 0 ? x0 : x0 - 5.5, (W - 18.32) / 2, 5.5, 18.32);
+      box(d > 0 ? x0 - 1.5 : x0, (W - 7.32) / 2, 1.5, 7.32);
+      spot(x0 + 11 * d, W / 2);
+      if (d > 0) arc(11, W / 2, 9.15, -reach, reach);
+      else arc(L - 11, W / 2, 9.15, Math.PI - reach, Math.PI + reach);
+    }
+    arc(0, 0, 1, 0, Math.PI / 2);
+    arc(L, 0, 1, Math.PI / 2, Math.PI);
+    arc(L, W, 1, Math.PI, 1.5 * Math.PI);
+    arc(0, W, 1, 1.5 * Math.PI, 2 * Math.PI);
+    T.base = base;
+  }
+
+  function ballAt(f) {
+    const x = pos[f * cols + cols - 2];
+    return x === MISSING ? null : [x / scale, pos[f * cols + cols - 1] / scale];
+  }
+
+  function drawPitch(f) {
+    const c = $("pitch").getContext("2d");
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.drawImage(T.base, 0, 0);
+    const row = f * cols;
+    const ball = ballAt(f);
+    const r = Math.max(4.5 * T.dpr, 0.9 * T.s);
+
+    if (view.trail) {
+      c.lineCap = "round";
+      c.strokeStyle = col.halo;
+      c.lineWidth = Math.max(1.5 * T.dpr, 0.22 * T.s);
+      let previous = null;
+      for (let k = Math.max(f - fps, 0); k <= f; k++) {
+        const b = ballAt(k);
+        if (!b) { previous = null; continue; }
+        if (previous) {
+          c.globalAlpha = 0.12 + 0.5 * (1 - (f - k) / fps);
+          c.beginPath();
+          c.moveTo(P(previous[0]), P(previous[1]));
+          c.lineTo(P(b[0]), P(b[1]));
+          c.stroke();
+        }
+        previous = b;
+      }
+      c.globalAlpha = 1;
+    }
+
+    let nearest = -1, best = Infinity;
+    c.lineWidth = 2 * T.dpr;
+    c.strokeStyle = col["turf-a"];
+    for (let i = 0; i < nSlots; i++) {
+      const x = pos[row + 2 * i];
+      if (x === MISSING) continue;
+      const y = pos[row + 2 * i + 1];
+      if (ball) {
+        const dx = x / scale - ball[0], dy = y / scale - ball[1], d = dx * dx + dy * dy;
+        if (d < best) { best = d; nearest = i; }
+      }
+      c.beginPath();
+      c.arc(P(x / scale), P(y / scale), r, 0, 2 * Math.PI);
+      c.fillStyle = slotTeam[i] === 0 ? col.home : col.away;
+      c.fill();
+      c.stroke();
+    }
+    if (view.nearest && nearest >= 0 && Math.sqrt(best) <= 4) {
+      c.beginPath();
+      c.arc(P(pos[row + 2 * nearest] / scale), P(pos[row + 2 * nearest + 1] / scale), r + 3.5 * T.dpr, 0, 2 * Math.PI);
+      c.strokeStyle = col.halo;
+      c.lineWidth = 2 * T.dpr;
+      c.stroke();
+    }
+
+    const rb = Math.max(3.5 * T.dpr, 0.6 * T.s);
+    if (ball) {
+      c.beginPath();
+      c.arc(P(ball[0]), P(ball[1]), rb, 0, 2 * Math.PI);
+      c.fillStyle = col.ball;
+      c.fill();
+      c.lineWidth = 1.5 * T.dpr;
+      c.strokeStyle = col["ball-ring"];
+      c.stroke();
+    } else {
+      // Where the ball was last seen, if that was in the last ten seconds.
+      for (let k = f - 1; k >= Math.max(0, f - 10 * fps); k--) {
+        const b = ballAt(k);
+        if (!b) continue;
+        c.setLineDash([3 * T.dpr, 3 * T.dpr]);
+        c.beginPath();
+        c.arc(P(b[0]), P(b[1]), rb * 1.7, 0, 2 * Math.PI);
+        c.strokeStyle = col.halo;
+        c.lineWidth = 1.5 * T.dpr;
+        c.globalAlpha = 0.6;
+        c.stroke();
+        c.globalAlpha = 1;
+        c.setLineDash([]);
+        break;
+      }
+    }
+  }
+
+  function lostFor(f) {
+    if (ballAt(f)) return 0;
+    let k = f;
+    while (k > 0 && f - k < 60 * fps && !ballAt(k)) k--;
+    return f - k;
+  }
+
+  // -- the strip around now --------------------------------------------------------------------
+
+  function layoutZoom() {
+    const canvas = $("zoom");
+    const w = canvas.clientWidth;
+    const rows = [];
+    if (hasPred) rows.push({ key: "pred", label: "Our call", h: 18 });
+    if (hasTruth) rows.push({ key: "truth", label: "Truth", h: 18 });
+    if (hasHome) rows.push({ key: "home", label: "Chance " + teams[0] + " has it", h: 46 });
+    if (hasDead) rows.push({ key: "dead", label: "Chance the ball is dead", h: 34 });
+    let y = 8;
+    for (const row of rows) { row.y = y; y += row.h + 10; }
+    Z.rows = rows;
+    Z.axisY = y - 4;
+    Z.h = y + 16;
+    Z.w = w;
+    Z.dpr = window.devicePixelRatio || 1;
+    Z.labelW = w < 700 ? 112 : 178;
+    Z.plotW = Math.max(60, w - Z.labelW - 4);
+    canvas.width = Math.round(w * Z.dpr);
+    canvas.height = Math.round(Z.h * Z.dpr);
+    canvas.style.height = Z.h + "px";
+  }
+
+  function tickStep(seconds) {
+    for (const s of [5, 10, 15, 30, 60, 120, 300, 600]) if (seconds / s <= 9) return s;
+    return 900;
+  }
+
+  function drawZoom() {
+    const c = $("zoom").getContext("2d");
+    c.setTransform(Z.dpr, 0, 0, Z.dpr, 0, 0);
+    c.fillStyle = col.surface;
+    c.fillRect(0, 0, Z.w, Z.h);
+    if (!Z.rows.length) return;
+    const lo = view.f - view.win, hi = view.f + view.win, span = hi - lo;
+    const fx = (g) => Z.labelW + (g - lo) / span * Z.plotW;
+    const top = Z.rows[0].y;
+
+    // Clock ticks, on whole multiples of the step after each kick-off.
+    const step = tickStep(span / fps);
+    c.font = "500 12px " + FONT;
+    c.textAlign = "center";
+    c.textBaseline = "alphabetic";
+    halves.forEach(([a, b], h) => {
+      if (b < lo || a > hi) return;
+      const kick = kicks[h] != null ? kicks[h] : a;
+      const base = (PERIOD_START_MIN[h] || 0) * 60;
+      const first = Math.max(0, Math.ceil((Math.max(a, lo) - kick) / (step * fps)));
+      for (let n = first; ; n++) {
+        const g = kick + n * step * fps;
+        if (g > Math.min(b, hi)) break;
+        const x = fx(g);
+        c.fillStyle = col.grid;
+        c.fillRect(Math.round(x), top, 1, Z.axisY - top);
+        c.fillStyle = col["ink-2"];
+        c.fillText(mmss(base + n * step), x, Z.axisY + 14);
+      }
+    });
+
+    c.textAlign = "left";
+    c.textBaseline = "middle";
+    c.font = "500 13px " + FONT;
+    for (const row of Z.rows) {
+      c.fillStyle = col["ink-2"];
+      const y = row.key === "pred" || row.key === "truth" ? row.y + row.h / 2 : row.y + 8;
+      c.fillText(fitText(c, row.label, Z.labelW - 12), 0, y);
+      if (row.key === "pred") drawStrip(c, row, pred, lo, hi, fx);
+      else if (row.key === "truth") drawStrip(c, row, truth, lo, hi, fx);
+      else if (row.key === "home") drawChance(c, row, pHome, lo, span, true);
+      else drawChance(c, row, pDead, lo, span, false);
+    }
+
+    const x = fx(view.f);
+    c.fillStyle = col.ink;
+    c.fillRect(Math.round(x) - 1, top - 5, 2, Z.axisY - top + 5);
+    if (view.hover != null) {
+      const xh = Math.round(fx(view.hover)) + 0.5;
+      c.strokeStyle = col.muted;
+      c.lineWidth = 1;
+      c.setLineDash([3, 3]);
+      c.beginPath();
+      c.moveTo(xh, top - 5);
+      c.lineTo(xh, Z.axisY);
+      c.stroke();
+      c.setLineDash([]);
+    }
+  }
+
+  function drawStrip(c, row, codes, lo, hi, fx) {
+    for (const [a, b] of halves) {
+      const s0 = Math.max(a, Math.floor(lo)), s1 = Math.min(b, Math.ceil(hi));
+      if (s0 > s1) continue;
+      let start = s0, code = codes[s0];
+      for (let g = s0 + 1; g <= s1 + 1; g++) {
+        if (g <= s1 && codes[g] === code) continue;
+        const x0 = fx(start), x1 = fx(g), w = x1 - x0;
+        const inset = w > 4 ? 1 : 0;   // a 2px surface gap between neighbouring runs
+        c.fillStyle = code === NONE ? Z.hatch : colourOf(code);
+        c.fillRect(x0 + inset, row.y, Math.max(w - 2 * inset, 0.75), row.h);
+        start = g;
+        code = codes[g];
+      }
+    }
+  }
+
+  // A model's probability over the window. For "home has it" the area is drawn from the 50% line,
+  // in the home colour above it and the away colour below: one value, two readable sides.
+  function drawChance(c, row, values, lo, span, diverging) {
+    const n = Math.floor(Z.plotW);
+    const mid = row.y + row.h / 2, bottom = row.y + row.h;
+    c.fillStyle = col.grid;
+    c.fillRect(Z.labelW, diverging ? mid : bottom, Z.plotW, 1);
+    const points = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const g = Math.round(lo + (i + 0.5) / n * span);
+      points[i] = g < 0 || g >= N || halfOf(g) < 0 || values[g] === NO_VALUE ? null : values[g] / 250;
+    }
+    c.globalAlpha = effectiveTheme() === "dark" ? 0.5 : 0.35;
+    for (let i = 0; i < n; i++) {
+      const p = points[i];
+      if (p == null) continue;
+      const x = Z.labelW + i, y = row.y + (1 - p) * row.h;
+      if (diverging) {
+        c.fillStyle = p >= 0.5 ? col.home : col.away;
+        c.fillRect(x, Math.min(mid, y), 1, Math.abs(mid - y));
+      } else {
+        c.fillStyle = col.dead;
+        c.fillRect(x, y, 1, bottom - y);
+      }
+    }
+    c.globalAlpha = 1;
+    c.strokeStyle = col["ink-2"];
+    c.lineWidth = 1.5;
+    c.lineJoin = "round";
+    c.beginPath();
+    let open = false;
+    for (let i = 0; i < n; i++) {
+      const p = points[i];
+      if (p == null) { open = false; continue; }
+      const x = Z.labelW + i + 0.5, y = row.y + (1 - p) * row.h;
+      if (open) c.lineTo(x, y); else { c.moveTo(x, y); open = true; }
+    }
+    c.stroke();
+  }
+
+  function zoomFrame(event) {
+    const x = event.clientX - $("zoom").getBoundingClientRect().left;
+    if (x < Z.labelW) return null;
+    return snap(view.f - view.win + (x - Z.labelW) / Z.plotW * 2 * view.win);
+  }
+
+  // -- the whole match -------------------------------------------------------------------------
+
+  function layoutOverview() {
+    const canvas = $("overview");
+    const w = canvas.clientWidth;
+    O.dpr = window.devicePixelRatio || 1;
+    O.w = w;
+    O.labelW = Z.labelW;
+    const rows = [];
+    let y = 6;
+    if (hasPred) { rows.push({ key: "pred", label: "Our call", y, h: 10 }); y += 14; }
+    if (hasTruth) { rows.push({ key: "truth", label: "Truth", y, h: 10 }); y += 14; }
+    if (hasTruth && hasPred) { rows.push({ key: "miss", label: "Differs", y, h: 6 }); y += 10; }
+    O.rows = rows;
+    O.labelY = y + 12;
+    O.h = y + 20;
+    const gap = 14;
+    const avail = Math.max(60, w - O.labelW - 4 - gap * (halves.length - 1));
+    const total = halves.reduce((sum, [a, b]) => sum + (b - a + 1), 0);
+    let x = O.labelW;
+    O.parts = halves.map(([a, b]) => {
+      const part = { a, b, x, w: avail * (b - a + 1) / total };
+      x += part.w + gap;
+      return part;
+    });
+    canvas.width = Math.round(w * O.dpr);
+    canvas.height = Math.round(O.h * O.dpr);
+    canvas.style.height = O.h + "px";
+  }
+
+  function overviewX(f) {
+    for (const p of O.parts) if (f <= p.b) return p.x + Math.max(0, f - p.a) / (p.b - p.a + 1) * p.w;
+    const last = O.parts[O.parts.length - 1];
+    return last.x + last.w;
+  }
+
+  function overviewFrame(x) {
+    for (let i = 0; i < O.parts.length; i++) {
+      const p = O.parts[i];
+      const edge = i < O.parts.length - 1 ? p.x + p.w + 7 : Infinity;
+      if (x < edge) return snap(p.a + Math.min(1, Math.max(0, (x - p.x) / p.w)) * (p.b - p.a));
+    }
+    return halves[halves.length - 1][1];
+  }
+
+  function buildOverviewBase() {
+    const base = document.createElement("canvas");
+    base.width = Math.round(O.w * O.dpr);
+    base.height = Math.round(O.h * O.dpr);
+    const c = base.getContext("2d");
+    c.setTransform(O.dpr, 0, 0, O.dpr, 0, 0);
+    c.fillStyle = col.surface;
+    c.fillRect(0, 0, O.w, O.h);
+    const hatch = makeHatch(c);
+    c.font = "500 12px " + FONT;
+    c.textBaseline = "middle";
+    c.fillStyle = col["ink-2"];
+    for (const row of O.rows) c.fillText(row.label, 0, row.y + row.h / 2);
+    O.parts.forEach((p, i) => {
+      const columns = Math.max(1, Math.floor(p.w));
+      const length = p.b - p.a + 1;
+      for (let j = 0; j < columns; j++) {
+        const f0 = p.a + Math.floor(j / columns * length);
+        const f1 = p.a + Math.floor((j + 1) / columns * length);
+        const x = p.x + j * p.w / columns, w = p.w / columns + 0.4;
+        for (const row of O.rows) {
+          if (row.key === "miss") {
+            if (missCum[f1] - missCum[f0] > 0) { c.fillStyle = col.critical; c.fillRect(x, row.y, w, row.h); }
+            continue;
+          }
+          const code = (row.key === "pred" ? pred : truth)[(f0 + f1) >> 1];
+          c.fillStyle = code === NONE ? hatch : colourOf(code);
+          c.fillRect(x, row.y, w, row.h);
+        }
+      }
+      c.fillStyle = col["ink-2"];
+      c.textBaseline = "alphabetic";
+      c.fillText(PERIODS[i] || "Period " + (i + 1), p.x, O.labelY);
+      c.textBaseline = "middle";
+    });
+    O.base = base;
+  }
+
+  function drawOverview() {
+    const c = $("overview").getContext("2d");
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.drawImage(O.base, 0, 0);
+    if (!O.rows.length) return;
+    c.setTransform(O.dpr, 0, 0, O.dpr, 0, 0);
+    const top = O.rows[0].y - 3;
+    const last = O.rows[O.rows.length - 1];
+    const bottom = last.y + last.h + 3;
+    const x0 = overviewX(snap(view.f - view.win)), x1 = overviewX(snap(view.f + view.win));
+    c.globalAlpha = 0.10;
+    c.fillStyle = col.ink;
+    c.fillRect(x0, top, Math.max(2, x1 - x0), bottom - top);
+    c.globalAlpha = 1;
+    c.fillRect(Math.round(overviewX(view.f)) - 1, top - 2, 2, bottom - top + 4);
+  }
+
+  // -- the scorebug ----------------------------------------------------------------------------
+
+  const shown = {};
+  function setText(id, text) { if (shown[id] !== text) { $(id).textContent = text; shown[id] = text; } }
+
+  function setChip(id, code) {
+    const chip = $(id);
+    const key = id + ":" + code + ":" + col.home;
+    if (shown[id] === key) return;
+    shown[id] = key;
+    chip.querySelector("b").textContent = nameOf(code);
+    const swatch = chip.querySelector("i");
+    swatch.style.background = code === NONE ? "transparent" : colourOf(code);
+    swatch.style.border = code === NONE ? "1px dashed " + col.axis : "0";
+  }
+
+  function updateBug(f) {
+    const clock = clockAt(f);
+    setText("clock", clock.text);
+    setText("half", clock.half);
+    if (hasPred) setChip("call-pred", pred[f]);
+    if (hasTruth) setChip("call-truth", truth[f]);
+    const verdict = $("verdict");
+    let text = "", kind = "";
+    if (hasTruth && hasPred) {
+      if (truth[f] === NONE) { text = "No truth here"; kind = "quiet"; }
+      else if (pred[f] === truth[f]) { text = "✓ Matches the truth"; kind = "matches"; }
+      else { text = "✕ Differs from the truth"; kind = "differs"; }
+    }
+    if (shown.verdict !== text) { verdict.textContent = text; verdict.className = "verdict " + kind; shown.verdict = text; }
+    const lost = lostFor(f);
+    const state = $("ball-state");
+    if (lost === 0) { state.hidden = true; }
+    else {
+      state.hidden = false;
+      setText("ball-state", lost >= 60 * fps ? "Ball not tracked for over a minute"
+        : "Ball not tracked for " + (lost / fps).toFixed(1) + " s");
+    }
+  }
+
+  let currentMiss = -1;
+  function markCurrentMiss(f) {
+    let index = -1;
+    for (let i = 0; i < misses.length; i++) {
+      if (misses[i].start > f) break;
+      if (f < misses[i].end) { index = i; break; }
+    }
+    if (index === currentMiss) return;
+    if (currentMiss >= 0) misses[currentMiss].button.removeAttribute("aria-current");
+    currentMiss = index;
+    if (index < 0) return;
+    const button = misses[index].button, list = $("miss-list");
+    button.setAttribute("aria-current", "true");
+    const top = button.offsetTop;
+    if (top < list.scrollTop || top + button.offsetHeight > list.scrollTop + list.clientHeight) {
+      list.scrollTop = top - 8;
+    }
+  }
+
+  // -- tooltip ---------------------------------------------------------------------------------
+
+  function showTip(event, g) {
+    const tip = $("tip");
+    if (g == null) { tip.hidden = true; return; }
+    const clock = clockAt(g);
+    const rows = [];
+    if (hasPred) rows.push(["Our call", nameOf(pred[g])]);
+    if (hasTruth && truth[g] !== NONE) rows.push(["Truth", nameOf(truth[g])]);
+    if (hasHome && pHome[g] !== NO_VALUE) rows.push(["Chance " + teams[0] + " has it", percent(pHome[g])]);
+    if (hasDead && pDead[g] !== NO_VALUE) rows.push(["Chance it is dead", percent(pDead[g])]);
+    rows.push(["Ball", ballAt(g) ? "tracked" : "not tracked"]);
+    tip.textContent = "";
+    const head = document.createElement("div");
+    head.className = "t-head";
+    head.textContent = clock.text + ", " + clock.half.charAt(0).toLowerCase() + clock.half.slice(1);
+    tip.append(head);
+    for (const [name, value] of rows) {
+      const line = document.createElement("div");
+      line.className = "t-row";
+      const left = document.createElement("span"), right = document.createElement("span");
+      left.textContent = name;
+      right.textContent = value;
+      line.append(left, right);
+      tip.append(line);
+    }
+    tip.hidden = false;
+    const box = tip.getBoundingClientRect();
+    let x = event.clientX + 14, y = event.clientY + 14;
+    if (x + box.width > window.innerWidth - 8) x = event.clientX - box.width - 14;
+    if (y + box.height > window.innerHeight - 8) y = event.clientY - box.height - 14;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+  }
+  function hideTip() { $("tip").hidden = true; }
+
+  // -- control ---------------------------------------------------------------------------------
+
+  function seek(f) {
+    view.f = snap(f);
+    view.ff = view.f;
+    view.dirty = true;
+    rememberMoment();
+  }
+
+  // Keep the paused frame in the address, so a reload comes back to the same moment.
+  let momentTimer = null;
+  function rememberMoment() {
+    if (view.playing) return;
+    clearTimeout(momentTimer);
+    momentTimer = setTimeout(() => {
+      const options = new URLSearchParams(location.hash.slice(1));
+      options.set("frame", String(view.f));
+      history.replaceState(null, "", "#" + options.toString());
+    }, 250);
+  }
+  function step(frames) { seek(view.f + frames); }
+
+  function play() {
+    const lastHalf = halves[halves.length - 1];
+    if (view.f >= lastHalf[1]) seek(kicks[0] != null ? kicks[0] : halves[0][0]);
+    view.playing = true;
+    $("play").textContent = "Pause";
+  }
+  function pause() {
+    view.playing = false;
+    $("play").textContent = "Play";
+    rememberMoment();
+  }
+  function togglePlay() { if (view.playing) pause(); else play(); }
+
+  function neighbour(list, f, direction) {
+    if (direction > 0) { for (const g of list) if (g > f) return g; return null; }
+    for (let i = list.length - 1; i >= 0; i--) if (list[i] < f - 1) return list[i];
+    return null;
+  }
+  function jump(list, direction) {
+    const target = neighbour(list, view.f, direction);
+    if (target != null) seek(target);
+  }
+
+  function onKey(event) {
+    const target = event.target;
+    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT")) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    switch (event.key) {
+      case " ":
+        if (target && target.tagName === "BUTTON") return;   // let the focused button act
+        togglePlay();
+        break;
+      case "ArrowLeft": step(event.shiftKey ? -5 * fps : -1); break;
+      case "ArrowRight": step(event.shiftKey ? 5 * fps : 1); break;
+      case "[": jump(changeTargets, -1); break;
+      case "]": jump(changeTargets, 1); break;
+      case ",": jump(missTargets, -1); break;
+      case ".": jump(missTargets, 1); break;
+      case "-": case "_": nudgeSpeed(-1); break;
+      case "=": case "+": nudgeSpeed(1); break;
+      default: return;
+    }
+    event.preventDefault();
+  }
+
+  function bind() {
+    $("play").addEventListener("click", togglePlay);
+    document.querySelectorAll("[data-step]").forEach((button) => {
+      button.addEventListener("click", () => step(Number(button.dataset.step)));
+    });
+    $("prev-change").addEventListener("click", () => jump(changeTargets, -1));
+    $("next-change").addEventListener("click", () => jump(changeTargets, 1));
+    $("prev-miss").addEventListener("click", () => jump(missTargets, -1));
+    $("next-miss").addEventListener("click", () => jump(missTargets, 1));
+    $("opt-trail").addEventListener("change", (event) => { view.trail = event.target.checked; view.dirty = true; });
+    $("opt-nearest").addEventListener("change", (event) => { view.nearest = event.target.checked; view.dirty = true; });
+    $("theme").addEventListener("click", toggleTheme);
+    darkQuery.addEventListener("change", () => { if (!document.documentElement.dataset.theme) themeChanged(); });
+
+    const zoom = $("zoom");
+    zoom.addEventListener("pointermove", (event) => {
+      view.hover = zoomFrame(event);
+      showTip(event, view.hover);
+      view.dirty = true;
+    });
+    zoom.addEventListener("pointerleave", () => { view.hover = null; hideTip(); view.dirty = true; });
+    zoom.addEventListener("click", (event) => { const g = zoomFrame(event); if (g != null) seek(g); });
+    zoom.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      const factor = event.deltaY > 0 ? 1.25 : 0.8;
+      view.win = Math.min(600 * fps, Math.max(5 * fps, view.win * factor));
+      view.dirty = true;
+    }, { passive: false });
+
+    const overview = $("overview");
+    let dragging = false;
+    const frameAt = (event) => overviewFrame(event.clientX - overview.getBoundingClientRect().left);
+    overview.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      overview.setPointerCapture(event.pointerId);
+      seek(frameAt(event));
+    });
+    overview.addEventListener("pointermove", (event) => {
+      const f = frameAt(event);
+      if (dragging) seek(f);
+      showTip(event, f);
+    });
+    overview.addEventListener("pointerup", () => { dragging = false; });
+    overview.addEventListener("pointercancel", () => { dragging = false; });
+    overview.addEventListener("pointerleave", hideTip);
+
+    document.addEventListener("keydown", onKey);
+    let lastWidth = 0;
+    new ResizeObserver((entries) => {
+      const width = entries[0].contentRect.width;
+      if (Math.abs(width - lastWidth) > 0.5) { lastWidth = width; scheduleLayout(); }
+    }).observe($("app"));
+    window.addEventListener("resize", scheduleLayout);
+  }
+
+  // -- the loop --------------------------------------------------------------------------------
+
+  let lastTime = null;
+  function loop(time) {
+    if (view.playing) {
+      if (lastTime != null) {
+        view.ff += (time - lastTime) / 1000 * fps * view.speed;
+        let f = Math.floor(view.ff);
+        if (halfOf(f) < 0) {
+          const next = halves.find(([a]) => a > view.f);
+          if (next) { f = next[0]; view.ff = f; }
+          else { f = halves[halves.length - 1][1]; pause(); }
+        }
+        if (f !== view.f) { view.f = f; view.dirty = true; }
+      }
+      lastTime = time;
+    } else {
+      lastTime = null;
+    }
+    if (view.dirty) {
+      view.dirty = false;
+      drawPitch(view.f);
+      drawZoom();
+      drawOverview();
+      updateBug(view.f);
+      markCurrentMiss(view.f);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

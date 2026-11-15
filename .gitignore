@@ -1,0 +1,12 @@
+# Match data is licensed for the competition only and must never be committed.
+data/
+cache/
+out/
+*.npz
+*.mp4
+__pycache__/
+*.pyc
+.venv/
+# Local tooling
+submit/
+SUBMIT.md
