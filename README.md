@@ -40,7 +40,7 @@ tactical/BAR-ATH_tactical_atd.txt   (+ BAR-ATH_tactical_atd.xml)
 tactical/BAR-ATH_tactical_smart_tagging.xml
 ```
 
-The run takes about 75 minutes on a laptop CPU and is deterministic: fixed seeds, pinned
+The run takes 75 to 100 minutes on a laptop CPU and is deterministic: fixed seeds, pinned
 dependencies, everything on the CPU. `--method frame` leaves out the sequence model (the previous
 submission, about 10 minutes). Validate the result with the challenge repository's own checker:
 

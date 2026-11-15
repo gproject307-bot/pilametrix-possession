@@ -209,7 +209,7 @@ chosen on it.
 | home share of time in play | 62.1% | — |
 | tagged set pieces with a decoded restart within −10 s / +20 s | 91% of 53; the tagged side has the ball after it in 75% of the 24 that carry a side | — |
 | second-half kickoff | frame 113,742, the documented one | — |
-| reproducibility | two independent runs side by side, byte-identical CSV | |
+| reproducibility | two runs side by side and one from a fresh clone, byte-identical CSV | |
 
 **Public five-minute window** (pipeline check only; 17 possessions, so it cannot rank anything):
 
@@ -297,10 +297,12 @@ python run.py --data /path/to/data --samples sample-data/data --out out/<team_na
 ```
 
 Python 3.12.10, numpy 2.4.6, scipy 1.17.1, scikit-learn 1.9.0, torch 2.13.0 (CPU), Windows 11
-x86-64. Fixed seeds, CPU only; about 75 minutes on a laptop, most of it training the frame
+x86-64. Fixed seeds, CPU only; 75 to 100 minutes on a laptop, most of it training the frame
 models four times (once on all three sample matches, then once without each, to give the
 sequence model honest inputs to learn from). PyTorch's oneDNN convolutions are switched off:
 they are not bit-for-bit repeatable when the machine is busy, and the contest requires a re-run
-to reproduce the file exactly. `run.py --method frame` reproduces the previous submission, without
-the sequence model, in about 10 minutes. See the repository README for the data layout and for
-reproducing the benchmark.
+to reproduce the file exactly. A run from a fresh clone of this repository, with no cached
+files, gave a byte-identical file (sha256
+`3bf5c3e83bb5c3c79614ffed7a01b36b0178c21f43617d88e52bd599ecf641c2`). `run.py --method frame`
+reproduces the previous submission, without the sequence model, in about 10 minutes. See the
+repository README for the data layout and for reproducing the benchmark.
