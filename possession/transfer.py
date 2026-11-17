@@ -14,6 +14,8 @@ the challenge data it is not, and a model allowed to learn that shortcut would n
 The two possession models are trained on both sides' views, so they cannot favour a side.
 """
 
+import os
+
 import numpy as np
 
 from . import model
@@ -21,13 +23,61 @@ from . import model
 H, A, D = model.H, model.A, model.D
 
 
-def design(match, params=model.PARAMS):
-    """Every feature matrix the transferred models need for one match."""
+def design(match, params=model.PARAMS, ball=None):
+    """Every feature matrix the transferred models need for one match.
+
+    ``ball`` is the ball sensor's prediction for this match (sensor.predict_ball), from a
+    regressor that never saw this match; with it the pseudo-ball features join the player
+    features. ``params["facing"]`` adds the facing features to the ball-neighbourhood ones.
+    """
+    from . import sensor
     evidence = model.ball_evidence(match, params)
     Xp, Xp_twin, player_names = model.player_design(match, with_tags=False)
     Xo, Xo_twin, owner_names = model.owner_design(match, evidence)
-    return {"evidence": evidence, "Xp": Xp, "Xp_twin": Xp_twin, "Xo": Xo, "Xo_twin": Xo_twin,
-            "player_names": player_names, "owner_names": owner_names}
+    if params.get("facing"):
+        extra, extra_twin, names = sensor.facing_features(match, evidence)
+        Xo = np.hstack([Xo, extra])
+        Xo_twin = np.hstack([Xo_twin, extra_twin])
+        owner_names = owner_names + names
+    # "Xp_dead" is what the dead/alive model reads: the player features WITHOUT the pseudo-ball
+    # columns. Those are blank exactly where the ball is tracked, so they would tell the model
+    # whether a ball is tracked, and in the sample matches a tracked ball is never a dead ball,
+    # which is not true of the challenge match (see the module docstring).
+    built = {"evidence": evidence, "Xp": Xp, "Xp_twin": Xp_twin, "Xo": Xo, "Xo_twin": Xo_twin,
+             "Xp_dead": Xp, "player_names": player_names, "owner_names": owner_names}
+    return with_ball(built, match, ball)
+
+
+def with_ball(built, match, ball):
+    """``built`` with the pseudo-ball features of the ball sensor's prediction ``ball`` appended
+    to the player features (unchanged when ``ball`` is None)."""
+    from . import sensor
+    if ball is None:
+        return built
+    extra, extra_twin, names = sensor.pseudo_ball_features(match, built["evidence"], ball)
+    return dict(built, Xp=np.hstack([built["Xp"], extra]),
+                Xp_twin=np.hstack([built["Xp_twin"], extra_twin]),
+                player_names=built["player_names"] + names)
+
+
+def ball_regressors(games, matches, log=None):
+    """The ball sensor's regressors: one per sample match trained on the other two (for that
+    match's own features), and one on all of them (for the challenge match).
+
+    ``matches[i]`` lists the roughened copies of ``games[i]``; the regressors learn from those
+    copies, with the clean match's ball as the target."""
+    from . import sensor
+    say = log or (lambda *_: None)
+    rows = []
+    for game, copies in zip(games, matches):
+        rows.append([sensor.regressor_rows(copy, game["bx"], game["by"], model.graded_mask(copy))
+                     for copy in copies])
+    others = {i: sensor.fit_ball([r for j in range(len(games)) if j != i for r in rows[j]])
+              for i in range(len(games))}
+    say("ball sensor fitted without each sample match")
+    everything = sensor.fit_ball([r for group in rows for r in group])
+    say("ball sensor fitted on all sample matches")
+    return others, everything
 
 
 def spell_weights(match, exponent, typical=125.0, low=0.2, high=5.0):
@@ -62,7 +112,7 @@ def training_rows(match, built, params=model.PARAMS):
     alive = graded & (labels != D)
     seen = alive & built["evidence"]["visible"]
     return {
-        "dead_X": built["Xp"][graded], "dead_y": (labels[graded] == D).astype(np.int8),
+        "dead_X": built["Xp_dead"][graded], "dead_y": (labels[graded] == D).astype(np.int8),
         "team_X": built["Xp"][alive], "team_twin": built["Xp_twin"][alive],
         "team_y": (labels[alive] == H).astype(np.int8),
         "owner_X": built["Xo"][seen], "owner_twin": built["Xo_twin"][seen],
@@ -101,7 +151,7 @@ def apply(models, built):
     """Per-frame probabilities for one match, in the form model.frame_scores expects."""
     out = {}
     if "dead" in models:
-        out["dead_transfer"] = model.predict(models["dead"], built["Xp"])
+        out["dead_transfer"] = model.predict(models["dead"], built["Xp_dead"])
     if "team" in models:
         out["team_transfer"] = model.predict(models["team"], built["Xp"], built["Xp_twin"])
     if "owner" in models:
@@ -117,7 +167,8 @@ def apply(models, built):
     return out
 
 
-def from_samples(samples_dir, target, params=model.PARAMS, cache_dir=None, log=None):
+def from_samples(samples_dir, target, params=model.PARAMS, cache_dir=None, log=None,
+                 frames=None):
     """Train on the public sample matches and return the evidence for ``target``.
 
     1. Each sample match is roughened ``params["augment"]`` times with different noise.
@@ -129,32 +180,63 @@ def from_samples(samples_dir, target, params=model.PARAMS, cache_dir=None, log=N
        that never saw it (trained on the other two).
     4. It is fitted on those held-out traces and applied to the target's.
     """
-    from . import external, refine
+    from . import external, refine, sensor
     say = log or (lambda *_: None)
     games = external.load(samples_dir, cache_dir=cache_dir)
-    matches, built, rows = [], [], []
+    matches = [[external.degrade(game, seed=i + 100 * k) for k in range(params["augment"])]
+               for i, game in enumerate(games)]
+    # ``frames``: a file the frame models' outputs are saved to and, when it exists, read from,
+    # so that only the sequence model and the decode are re-run. Delete it after changing
+    # anything the frame models depend on.
+    if frames and os.path.isfile(frames):
+        z = np.load(frames)
+        sources = {key: z["target_" + key] for key in ("dead_transfer", "team_transfer",
+                                                        "owner_transfer", "all_transfer")}
+        say("frame models' outputs read from {}".format(frames))
+        if not params["w_refined_transfer"]:
+            return sources
+        sequence_list = []
+        for i in range(len(games)):
+            for k, match in enumerate(matches[i]):
+                trace = {key: z["trace_{}_{}_{}".format(i, k, key)] for key in sources}
+                sequence_list += refine.sequences(match, trace, model.ball_evidence(match, params),
+                                                  params)
+        nets = refine.fit(sequence_list, params, log=say)
+        sources["refined_transfer"] = refine.apply(nets, target, sources,
+                                                   model.ball_evidence(target, params), params)
+        return sources
+    sensors, sensor_all = (ball_regressors(games, matches, log=say) if params.get("ball_sensor")
+                           else ({}, None))
+    built, rows = [], []
     for i, game in enumerate(games):
-        matches.append([external.degrade(game, seed=i + 100 * k)
-                        for k in range(params["augment"])])
-        built.append([design(match, params) for match in matches[-1]])
+        built.append([design(match, params,
+                             sensor.predict_ball(sensors[i], match) if sensors else None)
+                      for match in matches[i]])
         rows.append([training_rows(match, b, params)
-                     for match, b in zip(matches[-1], built[-1])])
+                     for match, b in zip(matches[i], built[-1])])
         say("features ready for {}".format(game["name"]))
 
     models = train([r for group in rows for r in group], params)
-    target_built = design(target, params)
+    target_built = design(target, params,
+                          sensor.predict_ball(sensor_all, target) if sensor_all else None)
     sources = apply(models, target_built)
     say("frame models trained on all sample matches and applied to the challenge match")
     if not params["w_refined_transfer"]:
         return sources
 
     sequence_list = []
+    saved = {"target_" + key: value for key, value in sources.items()}
     for i in range(len(games)):
         held_out = train([r for j in range(len(games)) if j != i for r in rows[j]], params)
-        for match, b in zip(matches[i], built[i]):
-            sequence_list += refine.sequences(match, apply(held_out, b), b["evidence"], params)
+        for k, (match, b) in enumerate(zip(matches[i], built[i])):
+            trace = apply(held_out, b)
+            saved.update({"trace_{}_{}_{}".format(i, k, key): value for key, value in trace.items()})
+            sequence_list += refine.sequences(match, trace, b["evidence"], params)
         say("held-out traces ready for {}".format(games[i]["name"]))
     del built, rows
+    if frames:
+        os.makedirs(os.path.dirname(os.path.abspath(frames)), exist_ok=True)
+        np.savez_compressed(frames, **saved)
 
     nets = refine.fit(sequence_list, params, log=say)
     sources["refined_transfer"] = refine.apply(nets, target, sources, target_built["evidence"],

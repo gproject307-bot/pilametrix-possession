@@ -9,9 +9,11 @@ possession), `D` (dead ball) or `X` (outside the two halves).
 The method and how it was chosen are described in
 [docs/technical_document.md](docs/technical_document.md). In short: gradient-boosted models read
 the ball's neighbourhood and the collective behaviour of the 22 players and say, per frame, whether
-the ball is in play and which side has it; a small temporal convolutional network refines the
-"which side" answer over time; a three-state Viterbi decode turns that evidence into possessions. The models are trained on **other matches** with real labels (Metrica Sports' public
-sample data), roughened until they behave like the automatic tracking. Several methods were
+the ball is in play and which side has it; where the ball is not tracked, a "ball sensor" guesses
+its position from the players; a small temporal convolutional network refines the "which side"
+answer over time; a three-state Viterbi decode turns that evidence into possessions. The models
+are trained on **other matches** with real labels (Metrica Sports' public sample data),
+roughened until they behave like the automatic tracking. Several methods were
 compared on those matches with the official scorer, and the chosen one was applied to the
 challenge match unchanged.
 
@@ -40,9 +42,10 @@ tactical/BAR-ATH_tactical_atd.txt   (+ BAR-ATH_tactical_atd.xml)
 tactical/BAR-ATH_tactical_smart_tagging.xml
 ```
 
-The run takes 75 to 100 minutes on a laptop CPU and is deterministic: fixed seeds, pinned
-dependencies, everything on the CPU. `--method frame` leaves out the sequence model (the previous
-submission, about 10 minutes). Validate the result with the challenge repository's own checker:
+The run takes 70 to 100 minutes on a laptop CPU and is deterministic: fixed seeds, pinned
+dependencies, everything on the CPU. `--method first` runs our first submission (no ball sensor,
+no facing, 40 s of context); `--method frame` leaves out the sequence model (about 10 minutes).
+Validate the result with the challenge repository's own checker:
 
 ```bash
 python /path/to/more-than-a-hack-2027/evaluation/validate_submission.py out/<team_name>.csv
@@ -91,6 +94,7 @@ possession/external.py     read the public sample matches, derive their labels, 
 possession/features.py     ball kinematics and touches, ball-to-player distances, team features
 possession/model.py        ball evidence, classifiers, fusion and decode
 possession/transfer.py     train on other matches, apply to the match being decoded
+possession/sensor.py       the ball sensor (ball position from the players) and guessed facing
 possession/refine.py       the sequence model that refines who has the ball
 possession/hmm.py          Viterbi
 possession/diagnostics.py  label-free checks (run.py --diagnostics)

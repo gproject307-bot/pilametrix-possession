@@ -33,7 +33,7 @@ PARAMS = {
     "near_full": 2.0,      # ball within this of a player: full-weight evidence
     "near_zero": 4.0,      # beyond this of every player: no evidence (ball in flight / loose)
     "gap_scale": 2.0,      # metres of nearest-player advantage that saturate the evidence
-    "w_rule_team": 0.0,    # superseded by the learned ownership models; 1.0 in SELF_TRAINED
+    "w_rule_team": 0.0,    # the nearest-player rule; 1.0 in SELF_TRAINED
     # -- ball evidence, dead/alive ---------------------------------------------------------------
     "outside_margin": 0.5, # metres beyond a pitch line before the ball counts as out
     "w_outside": 2.0,
@@ -47,7 +47,7 @@ PARAMS = {
     "w_dead_transfer": 0.25,
     "w_owner_transfer": 0.25,
     "w_all_transfer": 0.25,
-    "w_refined_transfer": 0.5,     # the sequence model (refine.py)
+    "w_refined_transfer": 1.0,     # the sequence model (refine.py); 0.5 in the first submission
     "w_team_transfer_hidden": 0.5,
     "w_team_transfer_visible": 0.0,
     "w_dead_self": 0.0,
@@ -76,7 +76,11 @@ PARAMS = {
     "refine_spell_weight": 0.5,
     "refine_epochs": 30,
     "refine_width": 64,
-    "refine_layers": 10,   # dilations 1 .. 512 frames
+    "refine_layers": 10,   # dilations 1 .. 512 frames, unless refine_reach is set
+    "refine_reach": 125,   # frames of context each side (5 s); 5 to 45 s all score alike
+    # -- extra evidence (sensor.py) ---------------------------------------------------------------
+    "ball_sensor": True,   # predict the missing ball from the players
+    "facing": True,        # guessed facing of the players nearest the ball
     "refine_dropout": 0.2,
     "refine_crop": 6000,   # frames per training window
     "refine_batch": 8,
@@ -93,11 +97,17 @@ PARAMS = {
 # Alternatives, all benchmarked (benchmark.py):
 # the frame models alone, without the sequence model (the previous submission) ...
 FRAME_ONLY = dict(PARAMS, w_refined_transfer=0.0, w_all_transfer=0.5, w_team_transfer_hidden=0.0,
-                  w_dead_transfer=0.25, clip_logit=3.0, switch_team=8.0, switch_dead=12.0)
+                  w_dead_transfer=0.25, clip_logit=3.0, switch_team=8.0, switch_dead=12.0,
+                  w_rule_team=0.0, ball_sensor=False, facing=False)
 # ... and the sequence model alone, which finds a few more short possessions and splits many
 # more long ones.
 SEQUENCE = dict(PARAMS, w_refined_transfer=1.0, w_all_transfer=0.0, w_dead_transfer=0.15,
-                switch_team=6.0)
+                switch_team=6.0, w_rule_team=0.0)
+
+# The first submission (sha256 3bf5c3e8...): no ball sensor, no facing, 40 s of context.
+FIRST_SUBMISSION = dict(PARAMS, ball_sensor=False, facing=False, refine_reach=None,
+                        w_rule_team=0.0, w_all_transfer=0.25, w_refined_transfer=0.5,
+                        switch_team=12.0, switch_dead=12.0)
 
 # The earlier method, kept for comparison: the nearest-player rule plus classifiers taught only by
 # this match's own ball-derived pseudo-labels. It needs no other match.

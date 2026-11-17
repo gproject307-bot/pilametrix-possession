@@ -60,12 +60,14 @@ def auc(score, positive):
 
 def prepare(args, log):
     """Degraded matches, their evidence, and held-out predictions of the transferred models."""
+    params = dict(model.PARAMS, boost_iters=args.iters, boost_leaves=args.leaves,
+                  spell_weight=args.spell_weight, refine_device=args.device)
+    if params.get("ball_sensor") or params.get("facing"):
+        return prepare_sensor(args, params, log)
     games = external.load(args.samples, cache_dir=args.cache)
     matches = [external.degrade(game, seed=args.seed + i) for i, game in enumerate(games)]
     log("loaded and degraded {} matches".format(len(matches)))
 
-    params = dict(model.PARAMS, boost_iters=args.iters, boost_leaves=args.leaves,
-                  spell_weight=args.spell_weight, refine_device=args.device)
     stem = os.path.join(args.cache, "benchmark_{}_seed{}_i{}_l{}_a{}_w{}".format(
         external.NOISE_VERSION, args.seed, args.iters, args.leaves, args.augment,
         args.spell_weight))
@@ -128,6 +130,97 @@ def prepare(args, log):
     return matches, evidences, sources
 
 
+def prepare_sensor(args, params, log):
+    """``prepare`` with the ball sensor and facing. Nothing ever sees the held-out match: for
+    held-out match i, with j and k the other two, the ball sensor for i is fitted on j and k, for
+    training match j on k alone and for k on j alone, and the sequence model's training traces
+    (j scored by frame models fitted on k alone, and k by models fitted on j) use those too."""
+    from possession import sensor
+    games = external.load(args.samples, cache_dir=args.cache)
+    copies = [[external.degrade(game, seed=args.seed + i + 100 * k) for k in range(args.augment)]
+              for i, game in enumerate(games)]
+    matches = [group[0] for group in copies]
+    evidences = [model.ball_evidence(match) for match in matches]
+    log("loaded and degraded {} matches, {} copies each".format(len(matches), args.augment))
+    n = len(matches)
+    stem = os.path.join(args.cache, "benchmark_{}_seed{}_i{}_l{}_a{}_w{}_bs{}_f{}".format(
+        external.NOISE_VERSION, args.seed, args.iters, args.leaves, args.augment,
+        args.spell_weight, int(bool(params.get("ball_sensor"))), int(bool(params.get("facing")))))
+    frame_cache = stem + ".npz"
+    cache = "{}_r{}_{}.npz".format(stem, params.get("refine_reach"), args.device)
+    if os.path.isfile(cache) and not args.refit:
+        z = np.load(cache)
+        log("held-out predictions read from cache")
+        return matches, evidences, [{key: z["{}_{}".format(key, i)] for key in SOURCES}
+                                    for i in range(n)]
+
+    keys = ("held", "alone_j", "alone_k")
+    if os.path.isfile(frame_cache) and not args.refit:
+        z = np.load(frame_cache)
+        frame = {(i, part): {key: z["{}_{}_{}".format(part, key, i)] for key in SOURCES[:4]}
+                 for i in range(n) for part in keys}
+        log("frame models' held-out predictions read from cache")
+    else:
+        use_sensor = bool(params.get("ball_sensor"))
+        if use_sensor:
+            reg_rows = [[sensor.regressor_rows(c, games[i]["bx"], games[i]["by"],
+                                               model.graded_mask(c)) for c in copies[i]]
+                        for i in range(n)]
+            single = {k: sensor.fit_ball(reg_rows[k]) for k in range(n)}
+            pair = {i: sensor.fit_ball([r for j in range(n) if j != i for r in reg_rows[j]])
+                    for i in range(n)}
+            log("ball sensors fitted")
+
+        def ball(regressor, match):
+            return sensor.predict_ball(regressor, match) if use_sensor else None
+
+        # Feature matrices without the pseudo-ball (heavy, once per copy); the pseudo-ball
+        # columns are cheap and are added per fold.
+        base = [[transfer.design(c, params) for c in copies[i]] for i in range(n)]
+        log("features ready")
+        frame = {}
+        for i in range(n):
+            j, k = [x for x in range(n) if x != i]
+
+            def rows_of(m, by):
+                return [transfer.training_rows(c, transfer.with_ball(b, c, ball(single[by], c)
+                                                                     if use_sensor else None),
+                                               params)
+                        for c, b in zip(copies[m], base[m])]
+
+            rows_j, rows_k = rows_of(j, k), rows_of(k, j)
+            target = transfer.with_ball(base[i][0], matches[i],
+                                        ball(pair[i], matches[i]) if use_sensor else None)
+            frame[(i, "held")] = transfer.apply(transfer.train(rows_j + rows_k, params), target)
+            built_j = transfer.with_ball(base[j][0], matches[j],
+                                         ball(single[k], matches[j]) if use_sensor else None)
+            built_k = transfer.with_ball(base[k][0], matches[k],
+                                         ball(single[j], matches[k]) if use_sensor else None)
+            frame[(i, "alone_j")] = transfer.apply(transfer.train(rows_k, params), built_j)
+            frame[(i, "alone_k")] = transfer.apply(transfer.train(rows_j, params), built_k)
+            log("frame models done without {}".format(matches[i]["name"]))
+            del rows_j, rows_k, target, built_j, built_k
+        np.savez_compressed(frame_cache, **{"{}_{}_{}".format(part, key, i): value
+                                            for (i, part), source in frame.items()
+                                            for key, value in source.items()})
+
+    sources = []
+    for i in range(n):
+        j, k = [x for x in range(n) if x != i]
+        sequence_list = (refine.sequences(matches[j], frame[(i, "alone_j")], evidences[j], params)
+                         + refine.sequences(matches[k], frame[(i, "alone_k")], evidences[k],
+                                            params))
+        nets = refine.fit(sequence_list, params)
+        source = dict(frame[(i, "held")])
+        source["refined_transfer"] = refine.apply(nets, matches[i], source, evidences[i], params)
+        sources.append(source)
+        log("sequence model trained without {} and applied to it".format(matches[i]["name"]))
+    np.savez_compressed(cache, **{"{}_{}".format(key, i): value
+                                  for i, source in enumerate(sources)
+                                  for key, value in source.items()})
+    return matches, evidences, sources
+
+
 def components(matches, evidences, sources, log):
     """How good is each piece of evidence on its own, on the match it never saw?"""
     for match, evidence, source in zip(matches, evidences, sources):
@@ -182,9 +275,9 @@ METHODS = [
     ("ball model + player model on ball-less", dict(RULE, w_rule_team=0.0, w_owner_transfer=0.25,
                                                      w_team_transfer_hidden=0.25)),
     ("combined ball-and-player model", dict(RULE, w_rule_team=0.0, w_all_transfer=0.5)),
-    ("ball + combined model (previous submission)", model.FRAME_ONLY),
+    ("ball + combined model, no sequence model", model.FRAME_ONLY),
     ("sequence model alone", model.SEQUENCE),
-    ("sequence + ball + combined model (submitted)", model.PARAMS),
+    ("sequence + ball + combined model (submission)", model.PARAMS),
 ]
 
 # Coordinate ascent over the fusion weights and switch costs, on a coarse grid.

@@ -34,14 +34,18 @@ def main():
                         help="where to write the frame,label CSV")
     parser.add_argument("--cache", default="cache",
                         help="folder for the parsed-tracking caches ('' disables them)")
-    parser.add_argument("--method", choices=("transfer", "frame", "sequence", "self"),
+    parser.add_argument("--method", choices=("transfer", "first", "frame", "sequence", "self"),
                         default="transfer",
                         help="transfer: frame models and sequence model trained on other matches "
-                             "(the submission). frame: without the sequence model. sequence: the "
+                             "(the submission). first: the first submission, without the ball "
+                             "sensor and facing. frame: without the sequence model. sequence: the "
                              "sequence model alone. self: nearest-player rule plus this match's "
                              "own pseudo-labels")
     parser.add_argument("--evidence",
                         help="also save the per-frame model evidence here (.npz), for replay.py")
+    parser.add_argument("--frames",
+                        help="save the frame models' outputs here (.npz) and reuse them if the "
+                             "file exists, to re-run only the sequence model and the decode")
     parser.add_argument("--diagnostics", action="store_true",
                         help="also print the label-free checks described in the technical document")
     args = parser.parse_args()
@@ -59,9 +63,11 @@ def main():
         match["names"][0], match["names"][1], len(match["tags"])))
 
     if args.method != "self":
-        params = {"transfer": model.PARAMS, "frame": model.FRAME_ONLY,
+        params = {"transfer": model.PARAMS, "first": model.FIRST_SUBMISSION,
+                  "frame": model.FRAME_ONLY,
                   "sequence": model.SEQUENCE}[args.method]
-        sources = transfer.from_samples(args.samples, match, params, cache_dir=cache, log=log)
+        sources = transfer.from_samples(args.samples, match, params, cache_dir=cache, log=log,
+                                        frames=args.frames)
         log("learned evidence ready for the challenge match")
         result = model.run(match, params, log=log, transferred=sources, self_train=False)
     else:

@@ -81,17 +81,33 @@ def sequences(match, sources, evidence, params=model.PARAMS):
     return out
 
 
-def _network(c_in, width, layers, dropout):
+def dilations(layers, reach=None):
+    """Doubling dilations 1, 2, 4, ...: ``layers`` of them, or, with ``reach`` (frames each side),
+    as many as fit, plus one last layer that makes the reach exact (kernel 3 adds d each side)."""
+    if not reach:
+        return [2 ** i for i in range(layers)]
+    out, total, d = [], 0, 1
+    while total + d <= reach:
+        out.append(d)
+        total += d
+        d *= 2
+    if reach > total:
+        out.append(reach - total)
+    return out
+
+
+def _network(c_in, width, layers, dropout, reach=None):
     import torch
     import torch.nn as nn
+    steps = dilations(layers, reach)
 
     class Network(nn.Module):
         def __init__(self):
             super().__init__()
             self.inp = nn.Conv1d(c_in, width, 1)
-            self.conv = nn.ModuleList([nn.Conv1d(width, width, 3, padding=2 ** i, dilation=2 ** i)
-                                       for i in range(layers)])
-            self.mix = nn.ModuleList([nn.Conv1d(width, width, 1) for _ in range(layers)])
+            self.conv = nn.ModuleList([nn.Conv1d(width, width, 3, padding=d, dilation=d)
+                                       for d in steps])
+            self.mix = nn.ModuleList([nn.Conv1d(width, width, 1) for _ in steps])
             self.drop = nn.Dropout(dropout)
             self.out = nn.Conv1d(width, 1, 1)
 
@@ -137,7 +153,7 @@ def fit(sequence_list, params=model.PARAMS, log=None):
         torch.manual_seed(seed)
         rng = np.random.RandomState(seed)
         net = _network(c_in, params["refine_width"], params["refine_layers"],
-                       params["refine_dropout"]).to(device)
+                       params["refine_dropout"], params.get("refine_reach")).to(device)
         optimiser = torch.optim.AdamW(net.parameters(), lr=params["refine_lr"], weight_decay=1e-4)
         schedule = torch.optim.lr_scheduler.OneCycleLR(optimiser, max_lr=params["refine_lr"],
                                                        total_steps=steps)

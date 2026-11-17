@@ -1,7 +1,9 @@
 # Match data is licensed for the competition only and must never be committed.
 data/
 cache/
+cache_*/
 out/
+*.log
 *.npz
 *.mp4
 __pycache__/
