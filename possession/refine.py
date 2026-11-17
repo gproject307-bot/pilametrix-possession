@@ -3,14 +3,14 @@
 The frame models (transfer.py) judge every frame from hand-built summaries of its surroundings.
 This model reads their output as a time series, together with a few raw signals (how much nearer
 one side is to the ball, ball speed, ball touches and which side was nearer to the reconstructed
-point of each touch), and learns what a possession looks like as a whole: a small temporal
-convolutional network with dilations up to 512 frames, so it sees about 40 seconds either side.
+point of each touch). It is a small temporal convolutional network with dilated layers: 5 s of
+context either side by default, about 40 s in the first submission.
 
 It answers only the ownership question, on live frames. Whether the ball is in play is left to
 the dead/alive evidence, because the sample matches never show a ball during a stoppage and a
-sequence model would learn that shortcut immediately.
+sequence model would learn that as a shortcut.
 
-Two properties are built in rather than hoped for:
+Two properties hold by construction:
 
 - swapping the two sides flips the sign of its output exactly, so it cannot favour a side;
 - training weights each frame by the length of the possession it belongs to (see

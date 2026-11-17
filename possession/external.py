@@ -14,8 +14,8 @@ Ground truth is derived mechanically, the way the challenge describes its own:
   never move ownership on their own: a loose ball stays with the side that last had it.
 
 The corrected tracking is far cleaner than the automatic tracking the challenge provides, so
-``degrade`` roughens it in the ways that matter: the ball disappears for long stretches, players
-drop out, positions get noisy.
+``degrade`` adds the same kinds of error: the ball disappears for long stretches, players drop
+out, positions get noisy.
 """
 
 import csv

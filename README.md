@@ -7,15 +7,17 @@ For every frame of the tactical video it outputs `H` (home in possession), `A` (
 possession), `D` (dead ball) or `X` (outside the two halves).
 
 The method and how it was chosen are described in
-[docs/technical_document.md](docs/technical_document.md). In short: gradient-boosted models read
-the ball's neighbourhood and the collective behaviour of the 22 players and say, per frame, whether
-the ball is in play and which side has it; where the ball is not tracked, a "ball sensor" guesses
-its position from the players; a small temporal convolutional network refines the "which side"
-answer over time; a three-state Viterbi decode turns that evidence into possessions. The models
-are trained on **other matches** with real labels (Metrica Sports' public sample data),
-roughened until they behave like the automatic tracking. Several methods were
-compared on those matches with the official scorer, and the chosen one was applied to the
-challenge match unchanged.
+[docs/technical_document.md](docs/technical_document.md). Summary of the pipeline:
+
+1. Gradient-boosted frame models use the area around the ball and the collective behaviour of
+   the 22 players to say, per frame, whether the ball is in play and which side has it.
+2. Where the ball is not tracked, a "ball sensor" predicts its position from the players.
+3. A small temporal convolutional network refines the "which side" answer over time.
+4. A three-state Viterbi decode turns the evidence into possessions.
+
+The models are trained on **other matches** with real labels (Metrica Sports' public sample
+data), degraded to look like the automatic tracking. We compared several methods on those
+matches with the official scorer and applied the chosen one to the challenge match unchanged.
 
 ## Reproduce the submission
 
@@ -43,8 +45,8 @@ tactical/BAR-ATH_tactical_smart_tagging.xml
 ```
 
 The run takes 70 to 100 minutes on a laptop CPU and is deterministic: fixed seeds, pinned
-dependencies, everything on the CPU. `--method first` runs our first submission (no ball sensor,
-no facing, 40 s of context); `--method frame` leaves out the sequence model (about 10 minutes).
+dependencies, everything on the CPU. `--method first` reproduces our first submission byte for byte (no
+ball sensor, no facing, 40 s of context); `--method frame` leaves out the sequence model (about 10 minutes).
 Validate the result with the challenge repository's own checker:
 
 ```bash

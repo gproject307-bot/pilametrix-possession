@@ -206,10 +206,7 @@ def player_features(px, py, team, attack_sign):
 
 
 def with_context(matrix, names, halves=(12, 37, 75), lags=(50, 125)):
-    """Add temporal context: moving averages over several windows and lagged / led differences.
-
-    A frame on its own says little about a possession; a few seconds either side says much more.
-    """
+    """Add temporal context: moving averages over several windows and lagged / led differences."""
     blocks = [matrix]
     out_names = list(names)
     for half in halves:

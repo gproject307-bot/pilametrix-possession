@@ -1,4 +1,4 @@
-"""Classifiers taught by real labels on *other* matches, then applied to the match being decoded.
+"""Classifiers trained on real labels from *other* matches, then applied to the match being decoded.
 
 Four frame models, all trained on the roughened copies of the public sample matches
 (external.py), and a sequence model on top of them (refine.py):
