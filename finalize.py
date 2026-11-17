@@ -69,13 +69,22 @@ def write_pdf(markdown_path, pdf_path, title):
         body = markdown.markdown(handle.read(), extensions=["tables", "fenced_code"])
     page = """<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{title}</title>
 <style>
-body {{ font-family: "Segoe UI", system-ui, sans-serif; font-size: 10.5pt; line-height: 1.45;
-       margin: 18mm 16mm; color: #111; }}
+@page {{ size: A4; margin: 18mm 16mm 20mm;
+         @bottom-center {{ content: counter(page); font: 8pt "Segoe UI", sans-serif; color: #666; }} }}
+body {{ font-family: "Segoe UI", system-ui, sans-serif; font-size: 10pt; line-height: 1.42;
+       margin: 0; color: #111; }}
 h1 {{ font-size: 18pt; margin: 0 0 6pt; }} h2 {{ font-size: 13.5pt; margin: 18pt 0 6pt; }}
+h3 {{ font-size: 11.5pt; margin: 14pt 0 4pt; }}
+p {{ margin: 6pt 0; orphans: 3; widows: 3; }}
+ul, ol {{ margin: 4pt 0 8pt; padding-left: 18pt; }}
 table {{ border-collapse: collapse; margin: 8pt 0; font-size: 9pt; }}
 th, td {{ border: 1px solid #bbb; padding: 3pt 6pt; text-align: left; vertical-align: top; }}
 code, pre {{ font-family: Consolas, monospace; font-size: 9pt; }}
 pre {{ background: #f4f4f4; padding: 6pt; white-space: pre-wrap; }}
+/* page breaks: keep a heading or a lead-in line with what follows, and keep blocks whole */
+h1, h2, h3, h2 + p, h3 + p, p:has(+ ul), p:has(+ ol), p:has(+ table), p:has(+ pre) {{
+  break-after: avoid; }}
+table, tr, pre, ul, ol, li {{ break-inside: avoid; }}
 </style></head><body>{body}</body></html>""".format(title=title, body=body)
     with tempfile.TemporaryDirectory() as folder:
         html_path = os.path.join(folder, "document.html")
